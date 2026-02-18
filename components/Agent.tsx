@@ -22,6 +22,28 @@ interface SavedMessage {
   content: string;
 }
 
+const getReadableErrorMessage = (error: unknown, fallback: string) => {
+  if (error instanceof Error && error.message) return error.message;
+
+  if (typeof error === "string" && error.trim().length > 0) {
+    return error;
+  }
+
+  if (error && typeof error === "object") {
+    const maybeMessage = (error as { message?: unknown }).message;
+    if (typeof maybeMessage === "string" && maybeMessage.trim().length > 0) {
+      return maybeMessage;
+    }
+
+    const maybeError = (error as { error?: unknown }).error;
+    if (typeof maybeError === "string" && maybeError.trim().length > 0) {
+      return maybeError;
+    }
+  }
+
+  return fallback;
+};
+
 const Agent = ({
   userName,
   userId,
@@ -74,8 +96,15 @@ const Agent = ({
       setIsSpeaking(false);
     };
 
-    const onError = (error: Error) => {
-      console.log("Error:", error);
+    const onError = (error: unknown) => {
+      const message = getReadableErrorMessage(
+        error,
+        "Unable to start the call. Check your Vapi web token, workflow ID, and browser microphone permission."
+      );
+
+      toast.error(message);
+      setCallStatus(CallStatus.INACTIVE);
+      console.log("Vapi error event:", error);
     };
 
     vapi.on("call-start", onCallStart);
@@ -152,15 +181,25 @@ const Agent = ({
       }
 
       try {
-        await vapi.start(workflowId, {
+        const call = await vapi.start(workflowId, {
           variableValues: {
             username: userName,
             userid: userId,
           },
         });
+        if (!call) {
+          throw new Error(
+            "Unable to start Vapi workflow. Verify NEXT_PUBLIC_VAPI_WEB_TOKEN, NEXT_PUBLIC_VAPI_WORKFLOW_ID, and microphone permission."
+          );
+        }
       } catch (error) {
         console.error("Vapi start error:", error);
-        toast.error("Failed to start Vapi workflow.");
+        toast.error(
+          getReadableErrorMessage(
+            error,
+            "Failed to start Vapi workflow."
+          )
+        );
         setCallStatus(CallStatus.INACTIVE);
       }
     } else {
@@ -172,14 +211,24 @@ const Agent = ({
       }
 
       try {
-        await vapi.start(interviewer, {
+        const call = await vapi.start(interviewer, {
           variableValues: {
             questions: formattedQuestions,
           },
         });
+        if (!call) {
+          throw new Error(
+            "Unable to start Vapi interview. Verify your Vapi credentials and microphone permission."
+          );
+        }
       } catch (error) {
         console.error("Vapi start error:", error);
-        toast.error("Failed to start Vapi interview.");
+        toast.error(
+          getReadableErrorMessage(
+            error,
+            "Failed to start Vapi interview."
+          )
+        );
         setCallStatus(CallStatus.INACTIVE);
       }
     }
